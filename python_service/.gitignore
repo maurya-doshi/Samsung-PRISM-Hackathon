@@ -1,0 +1,11 @@
+__pycache__
+
+/build
+
+*$py.class
+*.py[cod]
+.venv/
+.env/
+env/
+
+*.uvicorn.log
