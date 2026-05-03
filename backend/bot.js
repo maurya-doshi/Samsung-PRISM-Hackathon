@@ -120,6 +120,47 @@ bot.onText(/\/help/, (msg) => {
   );
 });
 
+// Check python service status
+bot.onText(/\/status/, async (msg) => {
+    const chatId = msg.chat.id;
+    try {
+        const response = await axios.get(`${PYTHON_API}/`);
+        bot.sendMessage(chatId, `🐍 Python Service Status: ${response.data.status} at ${response.data.time}`);
+    } catch (error) {
+        bot.sendMessage(chatId, `❌ Error connecting to Python Service: ${error.message}`);
+    }
+});
+
+// Get info for a ticker
+bot.onText(/\/info (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const ticker = match[1].toUpperCase();
+    
+    try {
+        const response = await axios.get(`${PYTHON_API}/info`, { params: { ticker } });
+        const data = response.data;
+        bot.sendMessage(chatId, `📈 **${data.ticker} Info**\nUnits: ${data.units}\nCap: $${data.cap}\nCurrent Value: $${data.current_value}`, { parse_mode: 'Markdown' });
+    } catch (error) {
+        if (error.response && error.response.status === 400) {
+            bot.sendMessage(chatId, `⚠️ ${error.response.data.detail}`);
+        } else {
+            bot.sendMessage(chatId, `❌ Error fetching info: ${error.message}`);
+        }
+    }
+});
+
+// Echo any message (for testing)
+bot.on('message', (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    // Ignore commands
+    if (text.startsWith('/')) return;
+
+    console.log("Received:", text);
+    bot.sendMessage(chatId, `You said: ${text}`);
+});
+
 // /analyze <ticker>
 bot.onText(/\/analyze\s+(\S+)/i, async (msg, match) => {
   const chatId = msg.chat.id;
@@ -409,6 +450,7 @@ const KNOWN_COMMANDS = [
   '/start', '/help',
   '/analyze', '/alert', '/alerts', '/cancelalert',
   '/buy', '/sell', '/portfolio',
+  '/status', '/info',
 ];
 
 bot.on('message', (msg) => {
