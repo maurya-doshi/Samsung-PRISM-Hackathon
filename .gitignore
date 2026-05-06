@@ -29,3 +29,6 @@ logs/
 
 # Root env
 .env
+
+# Session docs (local only)
+claude-startup-docs/
