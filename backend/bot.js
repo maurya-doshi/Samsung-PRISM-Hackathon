@@ -86,14 +86,15 @@ function formatAnalysis(data, explanation) {
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    `👋 *Stock Intelligence Bot* is live!\n\n` +
+    `👋 *IPO Pulse Bot* is live!\n\n` +
     `Available commands:\n` +
-    `• /analyze <ticker> – Full stock analysis\n` +
+    `• /analyze <ticker> – Full stock analysis with AI insight\n` +
+    `• /ipo – Recent & upcoming IPO listings\n` +
     `• /alert <ticker> <price> – Set a price alert\n` +
     `• /alerts – List your active alerts\n` +
     `• /cancelalert <id> – Remove an alert\n` +
     `• /buy <ticker> <qty> <price> – Add stock to portfolio\n` +
-    `• /sell <ticker> – Remove stock from portfolio\n` +
+    `• /sell <ticker> [qty] – Sell from portfolio\n` +
     `• /portfolio – View your portfolio\n` +
     `• /help – Show this message`,
     { parse_mode: 'Markdown' }
@@ -104,9 +105,11 @@ bot.onText(/\/start/, (msg) => {
 bot.onText(/\/help/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    `*Commands*\n\n` +
+    `*IPO Pulse — Commands*\n\n` +
     `📊 *Analysis*\n` +
-    `/analyze RELIANCE – Analyze a stock\n\n` +
+    `/analyze RELIANCE – Full technical analysis + AI insight\n\n` +
+    `🚀 *IPO Tracker*\n` +
+    `/ipo – Recent IPO listings with live prices\n\n` +
     `🔔 *Alerts*\n` +
     `/alert TCS 3500 – Alert when TCS hits ₹3500\n` +
     `/alerts – View all your active alerts\n` +
@@ -192,6 +195,42 @@ bot.onText(/\/analyze\s+(\S+)/i, async (msg, match) => {
       `❌ Could not fetch analysis for *${ticker}*. Is the Python service running?`,
       { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
     );
+  }
+});
+
+// /ipo – list recent IPO debut stocks with live prices
+bot.onText(/\/ipo$/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  const loading = await bot.sendMessage(chatId, '🔍 Fetching recent IPO listings…');
+
+  try {
+    const res = await axios.get(`${PYTHON_API}/ipos`, { params: { limit: 8 }, timeout: 30000 });
+    const ipos = res.data.ipos;
+
+    if (!ipos || ipos.length === 0) {
+      return bot.editMessageText('ℹ️ No IPO data available right now.', {
+        chat_id: chatId, message_id: loading.message_id,
+      });
+    }
+
+    const lines = ipos.map((ipo) => {
+      const price  = ipo.current_price != null ? `₹${ipo.current_price}` : 'N/A';
+      const change = ipo.change_pct != null
+        ? (ipo.change_pct >= 0 ? `📈 +${ipo.change_pct}%` : `📉 ${ipo.change_pct}%`)
+        : '';
+      return `• *${ipo.name}* (${ipo.ticker.replace('.NS', '')})\n  Listed: ${ipo.ipo_date}  |  ${price}  ${change}`;
+    });
+
+    await bot.editMessageText(
+      `🚀 *Recent IPO Listings*\n━━━━━━━━━━━━━━━━━━\n${lines.join('\n\n')}`,
+      { chat_id: chatId, message_id: loading.message_id, parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    console.error('/ipo error:', err.message);
+    bot.editMessageText('❌ Could not fetch IPO data. Is the Python service running?', {
+      chat_id: chatId, message_id: loading.message_id,
+    });
   }
 });
 
@@ -448,7 +487,8 @@ bot.onText(/\/portfolio$/, (msg) => {
 // Known command prefixes — update this if you add new commands
 const KNOWN_COMMANDS = [
   '/start', '/help',
-  '/analyze', '/alert', '/alerts', '/cancelalert',
+  '/analyze', '/ipo',
+  '/alert', '/alerts', '/cancelalert',
   '/buy', '/sell', '/portfolio',
   '/status', '/info',
 ];
