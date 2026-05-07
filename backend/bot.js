@@ -7,7 +7,7 @@ const cron = require('node-cron');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const TOKEN = process.env.TOKEN;
-const PYTHON_API = 'http://localhost:8000'; // FastAPI base URL
+const PYTHON_API = process.env.PYTHON_API_URL || 'http://localhost:8000';
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -235,7 +235,7 @@ bot.onText(/\/ipo$/, async (msg) => {
 });
 
 // /alert <ticker> <price>
-bot.onText(/\/alert\s+(\S+)\s+([\d.]+)/i, (msg, match) => {
+bot.onText(/\/alert\s+(\S+)\s+([\d.]+)/i, async (msg, match) => {
   const chatId = msg.chat.id;
   const ticker = match[1].toUpperCase();
   const target  = parseFloat(match[2]);
@@ -244,8 +244,17 @@ bot.onText(/\/alert\s+(\S+)\s+([\d.]+)/i, (msg, match) => {
     return bot.sendMessage(chatId, '❌ Invalid price. Usage: /alert TCS 3500');
   }
 
-  // We'll determine direction at trigger time based on current price.
-  // For now, store as a generic alert and resolve direction on first check.
+  // Validate ticker before saving
+  try {
+    await fetchAnalysis(ticker);
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return bot.sendMessage(chatId, `❌ *${ticker}* is not a valid stock symbol.`, { parse_mode: 'Markdown' });
+    }
+    return bot.sendMessage(chatId, `❌ Could not verify *${ticker}*. Is the Python service running?`, { parse_mode: 'Markdown' });
+  }
+
+  // Direction is resolved on first cron check based on current vs target price
   db.run(
     `INSERT INTO alerts (chat_id, ticker, target, direction) VALUES (?, ?, ?, 'any')`,
     [chatId, ticker, target],
@@ -268,13 +277,17 @@ bot.onText(/\/alerts$/, (msg) => {
     `SELECT * FROM alerts WHERE chat_id = ? AND triggered = 0 ORDER BY id`,
     [chatId],
     (err, rows) => {
-      if (err || !rows.length) {
-        return bot.sendMessage(chatId, 'ℹ️ You have no active alerts.');
+      if (err) {
+        console.error('/alerts DB error:', err.message);
+        return bot.sendMessage(chatId, '❌ Could not retrieve alerts. Please try again.');
+      }
+      if (!rows.length) {
+        return bot.sendMessage(chatId, 'ℹ️ You have no active alerts.\n\nUse /alert <ticker> <price> to set one.');
       }
       const lines = rows.map(
         (r) => `• #${r.id}  *${r.ticker}*  @ ₹${r.target}`
       );
-      bot.sendMessage(chatId, `*Your Active Alerts*\n\n${lines.join('\n')}`, {
+      bot.sendMessage(chatId, `🔔 *Your Active Alerts*\n━━━━━━━━━━━━━━━━━━\n${lines.join('\n')}`, {
         parse_mode: 'Markdown',
       });
     }
@@ -353,7 +366,7 @@ cron.schedule('*/2 * * * *', async () => {
 // ── Portfolio Commands ────────────────────────────────────────────────────────
 
 // /buy <ticker> <quantity> <price>
-bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, (msg, match) => {
+bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, async (msg, match) => {
   const chatId   = msg.chat.id;
   const ticker   = match[1].toUpperCase();
   const quantity = parseFloat(match[2]);
@@ -361,6 +374,16 @@ bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, (msg, match) => {
 
   if (isNaN(quantity) || quantity <= 0 || isNaN(buyPrice) || buyPrice <= 0) {
     return bot.sendMessage(chatId, '❌ Invalid input. Usage: /buy TCS 10 3500');
+  }
+
+  // Validate ticker before saving to portfolio
+  try {
+    await fetchAnalysis(ticker);
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return bot.sendMessage(chatId, `❌ *${ticker}* is not a valid stock symbol.`, { parse_mode: 'Markdown' });
+    }
+    return bot.sendMessage(chatId, `❌ Could not verify *${ticker}*. Is the Python service running?`, { parse_mode: 'Markdown' });
   }
 
   // If ticker already exists for this user, add to the holding (average down/up)

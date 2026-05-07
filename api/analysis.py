@@ -3,9 +3,14 @@ Stock analysis module — fetches data via yfinance and computes technical indic
 """
 
 import asyncio
+import logging
 from typing import Any
 import yfinance as yf
 import pandas as pd
+
+# yfinance emits noisy 404 warnings for retired Yahoo Finance endpoints (fc.yahoo.com).
+# Silence them — the actual history() calls use a different endpoint and work fine.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 
 def _compute_rsi(series: pd.Series, period: int = 14) -> float:
@@ -58,7 +63,7 @@ def _fetch_analysis_sync(ticker: str) -> dict[str, Any]:
 
 async def get_stock_analysis(ticker: str) -> dict[str, Any]:
     """Run the blocking yfinance call in a thread pool."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch_analysis_sync, ticker)
 
 
@@ -113,5 +118,5 @@ def _fetch_ipo_data_sync(entries: list[dict], limit: int) -> list[dict]:
 
 
 async def get_ipo_listings(limit: int = 10) -> list[dict]:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch_ipo_data_sync, RECENT_IPOS, limit)
