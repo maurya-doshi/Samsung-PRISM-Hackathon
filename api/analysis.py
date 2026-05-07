@@ -1,10 +1,13 @@
 """
-Stock analysis module — fetches data via yfinance and computes technical indicators.
+Stock analysis module — fetches data via Alpha Vantage (primary) or yfinance (fallback).
 """
 
 import asyncio
 import logging
+import os
 from typing import Any
+
+import httpx
 import yfinance as yf
 import pandas as pd
 
@@ -12,6 +15,19 @@ import pandas as pd
 # Silence them — the actual history() calls use a different endpoint and work fine.
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
+_AV_BASE = "https://www.alphavantage.co/query"
+
+
+def _av_key() -> str | None:
+    return os.getenv("ALPHA_VANTAGE_API_KEY")
+
+
+def _to_av_symbol(ticker: str) -> str:
+    """Convert yfinance ticker suffix to Alpha Vantage format."""
+    return ticker.replace(".NS", ".NSE").replace(".BO", ".BSE")
+
+
+# ── Technical indicators ───────────────────────────────────────────────────────
 
 def _compute_rsi(series: pd.Series, period: int = 14) -> float:
     delta = series.diff()
@@ -25,7 +41,6 @@ def _compute_rsi(series: pd.Series, period: int = 14) -> float:
 
 
 def _compute_signal(price: float, ma20: float, ma50: float, rsi: float) -> str:
-    """Simple rule-based signal."""
     if price > ma20 > ma50 and rsi < 70:
         return "buy"
     if price < ma20 < ma50 and rsi > 30:
@@ -33,7 +48,71 @@ def _compute_signal(price: float, ma20: float, ma50: float, rsi: float) -> str:
     return "hold"
 
 
-def _fetch_analysis_sync(ticker: str) -> dict[str, Any]:
+# ── Alpha Vantage data fetchers ────────────────────────────────────────────────
+
+def _fetch_analysis_av(ticker: str, api_key: str) -> dict[str, Any]:
+    """Fetch daily time series from Alpha Vantage and compute indicators."""
+    params = {
+        "function": "TIME_SERIES_DAILY",
+        "symbol": _to_av_symbol(ticker),
+        "outputsize": "compact",
+        "apikey": api_key,
+    }
+    with httpx.Client(timeout=15.0) as client:
+        res = client.get(_AV_BASE, params=params)
+        res.raise_for_status()
+        data = res.json()
+
+    if "Note" in data:
+        raise RuntimeError("Alpha Vantage rate limit reached.")
+    if "Error Message" in data or "Time Series (Daily)" not in data:
+        raise ValueError(f"No data found for ticker '{ticker}'. Check the symbol.")
+
+    time_series = data["Time Series (Daily)"]
+    dates = sorted(time_series.keys())  # ascending
+
+    if len(dates) < 50:
+        raise ValueError(f"Not enough historical data for '{ticker}' to compute MA50.")
+
+    close = pd.Series(
+        [float(time_series[d]["4. close"]) for d in dates],
+        index=pd.to_datetime(dates),
+    )
+
+    price  = round(float(close.iloc[-1]), 2)
+    ma20   = round(float(close.rolling(20).mean().iloc[-1]), 2)
+    ma50   = round(float(close.rolling(50).mean().iloc[-1]), 2)
+    rsi    = _compute_rsi(close)
+    signal = _compute_signal(price, ma20, ma50, rsi)
+
+    return {"ticker": ticker, "price": price, "ma20": ma20, "ma50": ma50, "rsi": rsi, "signal": signal}
+
+
+def _fetch_quote_av(ticker: str, api_key: str) -> tuple[float | None, float | None]:
+    """Fetch current price and daily change % via Alpha Vantage GLOBAL_QUOTE."""
+    params = {
+        "function": "GLOBAL_QUOTE",
+        "symbol": _to_av_symbol(ticker),
+        "apikey": api_key,
+    }
+    with httpx.Client(timeout=10.0) as client:
+        res = client.get(_AV_BASE, params=params)
+        res.raise_for_status()
+        data = res.json()
+
+    quote = data.get("Global Quote", {})
+    if not quote or not quote.get("05. price"):
+        return None, None
+
+    price = round(float(quote["05. price"]), 2)
+    change_str = quote.get("10. change percent", "").replace("%", "").strip()
+    change_pct = round(float(change_str), 2) if change_str else None
+    return price, change_pct
+
+
+# ── yfinance fallback fetchers ─────────────────────────────────────────────────
+
+def _fetch_analysis_yf(ticker: str) -> dict[str, Any]:
     stock = yf.Ticker(ticker)
     hist = stock.history(period="3mo")
 
@@ -45,33 +124,38 @@ def _fetch_analysis_sync(ticker: str) -> dict[str, Any]:
     if len(close) < 50:
         raise ValueError(f"Not enough historical data for '{ticker}' to compute MA50.")
 
-    price = round(float(close.iloc[-1]), 2)
-    ma20  = round(float(close.rolling(20).mean().iloc[-1]), 2)
-    ma50  = round(float(close.rolling(50).mean().iloc[-1]), 2)
-    rsi   = _compute_rsi(close)
+    price  = round(float(close.iloc[-1]), 2)
+    ma20   = round(float(close.rolling(20).mean().iloc[-1]), 2)
+    ma50   = round(float(close.rolling(50).mean().iloc[-1]), 2)
+    rsi    = _compute_rsi(close)
     signal = _compute_signal(price, ma20, ma50, rsi)
 
-    return {
-        "ticker": ticker,
-        "price":  price,
-        "ma20":   ma20,
-        "ma50":   ma50,
-        "rsi":    rsi,
-        "signal": signal,
-    }
+    return {"ticker": ticker, "price": price, "ma20": ma20, "ma50": ma50, "rsi": rsi, "signal": signal}
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+def _fetch_analysis_sync(ticker: str) -> dict[str, Any]:
+    api_key = _av_key()
+    if api_key:
+        try:
+            return _fetch_analysis_av(ticker, api_key)
+        except (RuntimeError, Exception):
+            pass  # rate limited or network error — fall through to yfinance
+    return _fetch_analysis_yf(ticker)
 
 
 async def get_stock_analysis(ticker: str) -> dict[str, Any]:
-    """Run the blocking yfinance call in a thread pool."""
+    """Run the blocking data fetch in a thread pool."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch_analysis_sync, ticker)
 
 
 # ── IPO Listings ───────────────────────────────────────────────────────────────
 
-# Curated list of recent notable Indian IPOs (NSE tickers)
-# yfinance doesn't have a live IPO calendar, so we maintain a seed list
-# and enrich each entry with live price data where available.
+# Curated list of recent notable Indian IPOs (NSE tickers).
+# yfinance and Alpha Vantage don't provide a live IPO calendar,
+# so we maintain a seed list and enrich each entry with live price data.
 RECENT_IPOS = [
     {"ticker": "BAJAJHFL.NS",  "name": "Bajaj Housing Finance",     "ipo_date": "2024-09-16"},
     {"ticker": "HYUNDAI.NS",   "name": "Hyundai Motor India",        "ipo_date": "2024-10-22"},
@@ -87,24 +171,30 @@ RECENT_IPOS = [
 
 
 def _fetch_ipo_data_sync(entries: list[dict], limit: int) -> list[dict]:
+    api_key = _av_key()
     results = []
+
     for entry in entries[:limit]:
-        try:
-            stock = yf.Ticker(entry["ticker"])
-            hist = stock.history(period="5d")
-            if hist.empty:
-                current_price = None
-                change_pct = None
-            else:
-                current_price = round(float(hist["Close"].iloc[-1]), 2)
-                if len(hist) >= 2:
-                    prev = float(hist["Close"].iloc[-2])
-                    change_pct = round((current_price - prev) / prev * 100, 2)
-                else:
-                    change_pct = None
-        except Exception:
-            current_price = None
-            change_pct = None
+        current_price, change_pct = None, None
+
+        # Try Alpha Vantage GLOBAL_QUOTE first
+        if api_key:
+            try:
+                current_price, change_pct = _fetch_quote_av(entry["ticker"], api_key)
+            except Exception:
+                pass
+
+        # Fall back to yfinance if Alpha Vantage gave nothing
+        if current_price is None:
+            try:
+                hist = yf.Ticker(entry["ticker"]).history(period="5d")
+                if not hist.empty:
+                    current_price = round(float(hist["Close"].iloc[-1]), 2)
+                    if len(hist) >= 2:
+                        prev = float(hist["Close"].iloc[-2])
+                        change_pct = round((current_price - prev) / prev * 100, 2)
+            except Exception:
+                pass
 
         results.append({
             "ticker":        entry["ticker"],

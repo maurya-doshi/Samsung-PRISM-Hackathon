@@ -4,15 +4,17 @@ Provides stock analysis and AI-powered explanations for the Telegram bot.
 """
 
 import os
+from dotenv import load_dotenv
+
+# Must run before local imports so os.getenv() calls at module level pick up the .env values
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
 from .analysis import get_stock_analysis, get_ipo_listings
 from .explain import get_llm_explanation
-
-load_dotenv()
 
 app = FastAPI(
     title="IPO Pulse API",
