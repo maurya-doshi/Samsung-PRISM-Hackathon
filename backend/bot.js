@@ -1,4 +1,6 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
@@ -9,7 +11,14 @@ const cron = require('node-cron');
 const TOKEN = process.env.TOKEN;
 const PYTHON_API = process.env.PYTHON_API_URL || 'http://localhost:8000';
 
+if (!TOKEN) {
+  console.error('❌ FATAL: Telegram Bot TOKEN is not provided in environment variables.');
+  console.error('Check your .env file in the backend directory.');
+  process.exit(1);
+}
+
 const bot = new TelegramBot(TOKEN, { polling: true });
+
 
 // ── Database Setup ────────────────────────────────────────────────────────────
 const db = new sqlite3.Database('./alerts.db', (err) => {
@@ -165,9 +174,13 @@ bot.on('message', (msg) => {
 });
 
 // /analyze <ticker>
-bot.onText(/\/analyze\s+(\S+)/i, async (msg, match) => {
+bot.onText(/\/analyze(?:\s+(.*))?/i, async (msg, match) => {
   const chatId = msg.chat.id;
-  const ticker = match[1].toUpperCase();
+  const ticker = match[1]?.trim()?.toUpperCase();
+
+  if (!ticker) {
+    return bot.sendMessage(chatId, '❓ Usage: `/analyze RELIANCE`', { parse_mode: 'Markdown' });
+  }
 
   const waiting = await bot.sendMessage(chatId, `🔍 Fetching analysis for *${ticker}*…`, {
     parse_mode: 'Markdown',
@@ -191,12 +204,14 @@ bot.onText(/\/analyze\s+(\S+)/i, async (msg, match) => {
     });
   } catch (err) {
     console.error('/analyze error:', err.message);
+    const detail = err.response?.data?.detail ?? err.message;
     bot.editMessageText(
-      `❌ Could not fetch analysis for *${ticker}*. Is the Python service running?`,
+      `❌ Error for *${ticker}*: ${detail}\n\nMake sure the ticker is correct (e.g., RELIANCE or WIPRO).`,
       { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
     );
   }
 });
+
 
 // /ipo – list recent IPO debut stocks with live prices
 bot.onText(/\/ipo$/, async (msg) => {
@@ -235,23 +250,33 @@ bot.onText(/\/ipo$/, async (msg) => {
 });
 
 // /alert <ticker> <price>
-bot.onText(/\/alert\s+(\S+)\s+([\d.]+)/i, async (msg, match) => {
+bot.onText(/\/alert(?:\s+(.*))?/i, async (msg, match) => {
   const chatId = msg.chat.id;
-  const ticker = match[1].toUpperCase();
-  const target  = parseFloat(match[2]);
+  const args = match[1]?.trim().split(/\s+/);
+
+  if (!args || args.length < 2) {
+    return bot.sendMessage(chatId, '❓ Usage: `/alert TCS 3500`', { parse_mode: 'Markdown' });
+  }
+
+  const ticker = args[0].toUpperCase();
+  const target = parseFloat(args[1]);
 
   if (isNaN(target) || target <= 0) {
-    return bot.sendMessage(chatId, '❌ Invalid price. Usage: /alert TCS 3500');
+    return bot.sendMessage(chatId, '❌ Invalid price. Usage: `/alert TCS 3500`', { parse_mode: 'Markdown' });
   }
+
+  const waiting = await bot.sendMessage(chatId, `⏳ Verifying *${ticker}*…`, { parse_mode: 'Markdown' });
 
   // Validate ticker before saving
   try {
     await fetchAnalysis(ticker);
   } catch (err) {
-    if (err.response?.status === 404) {
-      return bot.sendMessage(chatId, `❌ *${ticker}* is not a valid stock symbol.`, { parse_mode: 'Markdown' });
-    }
-    return bot.sendMessage(chatId, `❌ Could not verify *${ticker}*. Is the Python service running?`, { parse_mode: 'Markdown' });
+    const detail = err.response?.data?.detail ?? 'Stock not found.';
+    return bot.editMessageText(`❌ *${ticker}*: ${detail}`, {
+      chat_id: chatId,
+      message_id: waiting.message_id,
+      parse_mode: 'Markdown',
+    });
   }
 
   // Direction is resolved on first cron check based on current vs target price
@@ -259,15 +284,15 @@ bot.onText(/\/alert\s+(\S+)\s+([\d.]+)/i, async (msg, match) => {
     `INSERT INTO alerts (chat_id, ticker, target, direction) VALUES (?, ?, ?, 'any')`,
     [chatId, ticker, target],
     function (err) {
-      if (err) return bot.sendMessage(chatId, '❌ Failed to save alert.');
-      bot.sendMessage(
-        chatId,
+      if (err) return bot.editMessageText('❌ Failed to save alert.', { chat_id: chatId, message_id: waiting.message_id });
+      bot.editMessageText(
         `✅ Alert set!\n📌 *${ticker}* @ ₹${target}\nID: \`${this.lastID}\`\n\nYou'll be notified when the price crosses this level.`,
-        { parse_mode: 'Markdown' }
+        { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
       );
     }
   );
 });
+
 
 // /alerts – list active alerts for this user
 bot.onText(/\/alerts$/, (msg) => {
@@ -366,24 +391,34 @@ cron.schedule('*/2 * * * *', async () => {
 // ── Portfolio Commands ────────────────────────────────────────────────────────
 
 // /buy <ticker> <quantity> <price>
-bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, async (msg, match) => {
-  const chatId   = msg.chat.id;
-  const ticker   = match[1].toUpperCase();
-  const quantity = parseFloat(match[2]);
-  const buyPrice = parseFloat(match[3]);
+bot.onText(/\/buy(?:\s+(.*))?/i, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const args = match[1]?.trim().split(/\s+/);
+
+  if (!args || args.length < 3) {
+    return bot.sendMessage(chatId, '❓ Usage: `/buy TCS 10 3500` (ticker, quantity, price)', { parse_mode: 'Markdown' });
+  }
+
+  const ticker   = args[0].toUpperCase();
+  const quantity = parseFloat(args[1]);
+  const buyPrice = parseFloat(args[2]);
 
   if (isNaN(quantity) || quantity <= 0 || isNaN(buyPrice) || buyPrice <= 0) {
-    return bot.sendMessage(chatId, '❌ Invalid input. Usage: /buy TCS 10 3500');
+    return bot.sendMessage(chatId, '❌ Invalid quantity or price. Usage: `/buy TCS 10 3500`', { parse_mode: 'Markdown' });
   }
+
+  const waiting = await bot.sendMessage(chatId, `⏳ Verifying *${ticker}*…`, { parse_mode: 'Markdown' });
 
   // Validate ticker before saving to portfolio
   try {
     await fetchAnalysis(ticker);
   } catch (err) {
-    if (err.response?.status === 404) {
-      return bot.sendMessage(chatId, `❌ *${ticker}* is not a valid stock symbol.`, { parse_mode: 'Markdown' });
-    }
-    return bot.sendMessage(chatId, `❌ Could not verify *${ticker}*. Is the Python service running?`, { parse_mode: 'Markdown' });
+    const detail = err.response?.data?.detail ?? 'Stock not found.';
+    return bot.editMessageText(`❌ *${ticker}*: ${detail}`, {
+      chat_id: chatId,
+      message_id: waiting.message_id,
+      parse_mode: 'Markdown',
+    });
   }
 
   // If ticker already exists for this user, add to the holding (average down/up)
@@ -398,13 +433,12 @@ bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, async (msg, match) => {
           `UPDATE portfolio SET quantity = ?, buy_price = ? WHERE id = ?`,
           [newQty, avgPrice, row.id],
           (err) => {
-            if (err) return bot.sendMessage(chatId, '❌ Failed to update holding.');
-            bot.sendMessage(
-              chatId,
+            if (err) return bot.editMessageText('❌ Failed to update holding.', { chat_id: chatId, message_id: waiting.message_id });
+            bot.editMessageText(
               `✅ *${ticker}* holding updated!\n` +
               `📦 Total qty: ${newQty}\n` +
               `💰 Avg buy price: ₹${avgPrice.toFixed(2)}`,
-              { parse_mode: 'Markdown' }
+              { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
             );
           }
         );
@@ -413,12 +447,11 @@ bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, async (msg, match) => {
           `INSERT INTO portfolio (chat_id, ticker, quantity, buy_price) VALUES (?, ?, ?, ?)`,
           [chatId, ticker, quantity, buyPrice],
           (err) => {
-            if (err) return bot.sendMessage(chatId, '❌ Failed to save holding.');
-            bot.sendMessage(
-              chatId,
+            if (err) return bot.editMessageText('❌ Failed to save holding.', { chat_id: chatId, message_id: waiting.message_id });
+            bot.editMessageText(
               `✅ Added to portfolio!\n` +
               `📌 *${ticker}*  ×${quantity}  @ ₹${buyPrice}`,
-              { parse_mode: 'Markdown' }
+              { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
             );
           }
         );
@@ -426,6 +459,7 @@ bot.onText(/\/buy\s+(\S+)\s+([\d.]+)\s+([\d.]+)/i, async (msg, match) => {
     }
   );
 });
+
 
 // /sell <ticker> [quantity]  — omit quantity to sell entire holding
 bot.onText(/\/sell\s+(\S+)(?:\s+([\d.]+))?/i, (msg, match) => {

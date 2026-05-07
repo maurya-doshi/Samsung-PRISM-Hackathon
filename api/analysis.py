@@ -19,12 +19,24 @@ _AV_BASE = "https://www.alphavantage.co/query"
 
 
 def _av_key() -> str | None:
-    return os.getenv("ALPHA_VANTAGE_API_KEY")
+    return os.getenv("ALPHA_VANTAGE_API_KEY") or os.getenv("STOCK_API_KEY")
 
 
 def _to_av_symbol(ticker: str) -> str:
     """Convert yfinance ticker suffix to Alpha Vantage format."""
+    # If no exchange suffix provided, default to NSE (.NS)
+    if "." not in ticker:
+        ticker = ticker + ".NS"
     return ticker.replace(".NS", ".NSE").replace(".BO", ".BSE")
+
+
+def _to_yf_symbol(ticker: str) -> str:
+    """Convert common/AV suffixes to yfinance format."""
+    # Ensure it ends with .NS or .BO for Indian stocks
+    if "." not in ticker:
+        return ticker + ".NS"
+    return ticker.replace(".NSE", ".NS").replace(".BSE", ".BO")
+
 
 
 # ── Technical indicators ───────────────────────────────────────────────────────
@@ -90,34 +102,72 @@ def _fetch_analysis_av(ticker: str, api_key: str) -> dict[str, Any]:
 
 def _fetch_quote_av(ticker: str, api_key: str) -> tuple[float | None, float | None]:
     """Fetch current price and daily change % via Alpha Vantage GLOBAL_QUOTE."""
+    av_symbol = _to_av_symbol(ticker)
     params = {
         "function": "GLOBAL_QUOTE",
-        "symbol": _to_av_symbol(ticker),
+        "symbol": av_symbol,
         "apikey": api_key,
     }
-    with httpx.Client(timeout=10.0) as client:
-        res = client.get(_AV_BASE, params=params)
-        res.raise_for_status()
-        data = res.json()
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            res = client.get(_AV_BASE, params=params)
+            res.raise_for_status()
+            data = res.json()
 
-    quote = data.get("Global Quote", {})
-    if not quote or not quote.get("05. price"):
-        return None, None
+        # Handle rate limiting
+        if "Note" in data:
+            logging.warning(f"AV rate limit hit during quote for {av_symbol}")
+            return None, None
 
-    price = round(float(quote["05. price"]), 2)
-    change_str = quote.get("10. change percent", "").replace("%", "").strip()
-    change_pct = round(float(change_str), 2) if change_str else None
-    return price, change_pct
+        quote = data.get("Global Quote", {})
+        if quote and quote.get("05. price"):
+            price = round(float(quote["05. price"]), 2)
+            change_str = quote.get("10. change percent", "").replace("%", "").strip()
+            change_pct = round(float(change_str), 2) if change_str else None
+            return price, change_pct
+
+        # If GLOBAL_QUOTE returned empty (common for some intl stocks), fallback to TIME_SERIES_DAILY
+        logging.info(f"AV GLOBAL_QUOTE empty for {av_symbol}, falling back to DAILY")
+        params["function"] = "TIME_SERIES_DAILY"
+        params["outputsize"] = "compact"
+        with httpx.Client(timeout=15.0) as client:
+            res = client.get(_AV_BASE, params=params)
+            res.raise_for_status()
+            data = res.json()
+
+        if "Time Series (Daily)" in data:
+            ts = data["Time Series (Daily)"]
+            dates = sorted(ts.keys())
+            if not dates: return None, None
+            
+            latest_date = dates[-1]
+            price = round(float(ts[latest_date]["4. close"]), 2)
+            
+            change_pct = None
+            if len(dates) >= 2:
+                prev_date = dates[-2]
+                prev_price = float(ts[prev_date]["4. close"])
+                change_pct = round((price - prev_price) / prev_price * 100, 2)
+            
+            return price, change_pct
+
+    except Exception as e:
+        logging.error(f"AV fetch error for {av_symbol}: {e}")
+    
+    return None, None
+
 
 
 # ── yfinance fallback fetchers ─────────────────────────────────────────────────
 
 def _fetch_analysis_yf(ticker: str) -> dict[str, Any]:
-    stock = yf.Ticker(ticker)
+    yf_symbol = _to_yf_symbol(ticker)
+    stock = yf.Ticker(yf_symbol)
     hist = stock.history(period="3mo")
 
     if hist.empty:
-        raise ValueError(f"No data found for ticker '{ticker}'. Check the symbol.")
+        raise ValueError(f"No data found for ticker '{yf_symbol}'. Check the symbol.")
+
 
     close = hist["Close"]
 
@@ -187,14 +237,16 @@ def _fetch_ipo_data_sync(entries: list[dict], limit: int) -> list[dict]:
         # Fall back to yfinance if Alpha Vantage gave nothing
         if current_price is None:
             try:
-                hist = yf.Ticker(entry["ticker"]).history(period="5d")
+                yf_symbol = _to_yf_symbol(entry["ticker"])
+                hist = yf.Ticker(yf_symbol).history(period="5d")
                 if not hist.empty:
                     current_price = round(float(hist["Close"].iloc[-1]), 2)
                     if len(hist) >= 2:
                         prev = float(hist["Close"].iloc[-2])
                         change_pct = round((current_price - prev) / prev * 100, 2)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(f"yfinance fetch error for {entry['ticker']}: {e}")
+
 
         results.append({
             "ticker":        entry["ticker"],
