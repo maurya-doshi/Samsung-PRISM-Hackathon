@@ -14,9 +14,12 @@
 | Command | Description |
 |---|---|
 | `/analyze RELIANCE` | Technical analysis (MA20, MA50, RSI) + AI/Rule Based insight |
-| `/alert TCS 3500` | Get notified when TCS hits ₹3500 |
-| `/alerts | Get a list of all the active alerts set by you |
-| `/buy TCS 10 3500` | Track portfolio entry |
+| `/buyalert TCS 3500` | Get notified when TCS goes below ₹3500 |
+| `/sellalert TCS 3500` | Get notified when TCS goes above ₹3500 |
+| `/updatealert <alert_no> 3500` | Update the target price of an existing alert while retaining its original trigger condition |
+| `/cancelalert <alert_no>` | Remove an active stock alert |
+| `/alerts` | Get a list of all the active alerts set by you |
+| `/buy TCS 10 3500` | Add a stock purchase entry to your portfolio |
 | `/sell TCS 5` | Partial or full sell |
 | `/portfolio` | View holdings with total invested value |
 
