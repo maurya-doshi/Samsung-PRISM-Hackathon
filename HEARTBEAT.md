@@ -1,8 +1,8 @@
-# HEARTBEAT.md — IPO Pulse Proactive Daemon Configuration
+# HEARTBEAT.md — Stock Pulse Proactive Daemon Configuration
 
 ## What is the Heartbeat?
 
-The heartbeat is the background pulse of IPO Pulse — autonomous actions the agent takes
+The heartbeat is the background pulse of Stock Pulse — autonomous actions the agent takes
 without being explicitly prompted. It runs as a cron daemon every 2 minutes inside `bot.js`.
 
 ## Current Heartbeat Tasks

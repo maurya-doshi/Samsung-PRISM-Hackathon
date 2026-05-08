@@ -1,4 +1,6 @@
-# IPO Pulse — AI-Powered Stock & IPO Tracker for Telegram
+# TEAM NUMBER: RIT_ByteX
+
+## Stock Pulse - An Autonomous Stock Intelligence Assistant With Telegram Integration.
 
 > A conversational AI agent built on the OpenClaw framework that delivers real-time Indian stock analysis, price alerts, and portfolio tracking — directly in Telegram.
 
@@ -13,6 +15,7 @@
 |---|---|
 | `/analyze RELIANCE` | Technical analysis (MA20, MA50, RSI) + AI/Rule Based insight |
 | `/alert TCS 3500` | Get notified when TCS hits ₹3500 |
+| `/alerts | Get a list of all the active alerts set by you |
 | `/buy TCS 10 3500` | Track portfolio entry |
 | `/sell TCS 5` | Partial or full sell |
 | `/portfolio` | View holdings with total invested value |
@@ -146,7 +149,6 @@ Open Telegram, find your bot, and send `/start`.
 
 ```
     Samsung-PRISM-Hackathon/
-    .
     ├── api
     │   ├── analysis.py
     │   ├── explain.py
@@ -159,15 +161,32 @@ Open Telegram, find your bot, and send `/start`.
     ├── HEARTBEAT.md
     ├── LICENSE
     ├── package-lock.json
-    ├── python_service
-    │   ├── app.py
-    │   ├── data_fetch.py
-    │   ├── indicators.py
-    │   └── requirements.txt
     ├── README.md
     ├── requirements.txt
     ├── Skill.md
     └── SOUL.md
 
-    4 directories, 18 files
+    3 directories, 14 files
 ```
+
+---
+
+## Documentation
+
+A directory that contains the complete documentation in the format requested by the organizers.
+
+    1. Project Video Demo.
+    2. Photos of the output/conversation with the bot using the telegram interface.
+    3. Database and debug logs.
+
+---
+
+## AI Disclosure
+
+The following AI models were used during the course of the development of this software:
+1. Claude Sonnet 4.6
+2. Claude Haiku 4.5
+
+They were used for the following purposes:
+1. Code generation.
+2. Information retrieval.
