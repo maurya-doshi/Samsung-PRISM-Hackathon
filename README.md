@@ -1,4 +1,4 @@
-# TEAM NUMBER: RIT_ByteX
+# TEAM NUMBER: MSRIT_ByteX
 
 ## Stock Pulse - An Autonomous Stock Intelligence Assistant With Telegram Integration.
 
@@ -176,8 +176,9 @@ Open Telegram, find your bot, and send `/start`.
 A directory that contains the complete documentation in the format requested by the organizers.
 
     1. Project Video Demo.
-    2. Photos of the output/conversation with the bot using the telegram interface.
-    3. Database and debug logs.
+    2. PPT
+    3. Photos of the output/conversation with the bot using the telegram interface.
+    4. Database and debug logs.
 
 ---
 
