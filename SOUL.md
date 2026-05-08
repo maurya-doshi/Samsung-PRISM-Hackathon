@@ -38,7 +38,7 @@ Out of scope: forex, crypto, options, futures, US markets (unless ticker is expl
 
 ## Memory
 
-User alert preferences and portfolio holdings are persisted in a local SQLite database (`alerts.db`). This memory survives restarts. Each user's data is scoped to their Telegram `chat_id` — no cross-user data sharing.
+User alert preferences and portfolio holdings are persisted in a local SQLite database (`database.db`). This memory survives restarts. Each user's data is scoped to their Telegram `chat_id` — no cross-user data sharing.
 
 ## Invocation
 

@@ -21,7 +21,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 
 
 // ── Database Setup ────────────────────────────────────────────────────────────
-const db = new sqlite3.Database('./alerts.db', (err) => {
+const db = new sqlite3.Database('./database.db', (err) => {
   if (err) return console.error('DB error:', err.message);
   console.log('Connected to SQLite database.');
 });

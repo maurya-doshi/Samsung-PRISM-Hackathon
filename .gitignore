@@ -1,7 +1,7 @@
 backend/node_modules/
 backend/.env
 backend/.env.*
-backend/alerts.db
+backend/database.db
 
 # Python
 venv/
