@@ -1,9 +1,9 @@
 # IPO Pulse — AI-Powered Stock & IPO Tracker for Telegram
 
-> A conversational AI agent built on the OpenClaw framework that delivers real-time Indian stock analysis, IPO listings, price alerts, and portfolio tracking — directly in Telegram.
+> A conversational AI agent built on the OpenClaw framework that delivers real-time Indian stock analysis, price alerts, and portfolio tracking — directly in Telegram.
 
 **Hackathon:** Samsung PRISM × OpenClaw — "Clash of the Claws" 2026  
-**Theme:** Theme 2 — Daily Utility (Delegate tasks to the intelligent orchestrator)
+**Theme:** Theme 3 — Productivity (Delegate tasks to the intelligent orchestrator)
 
 ---
 
@@ -11,8 +11,7 @@
 
 | Command | Description |
 |---|---|
-| `/analyze RELIANCE` | Technical analysis (MA20, MA50, RSI) + Claude AI insight |
-| `/ipo` | Recent Indian IPO listings with live prices |
+| `/analyze RELIANCE` | Technical analysis (MA20, MA50, RSI) + AI/Rule Based insight |
 | `/alert TCS 3500` | Get notified when TCS hits ₹3500 |
 | `/buy TCS 10 3500` | Track portfolio entry |
 | `/sell TCS 5` | Partial or full sell |
@@ -25,9 +24,9 @@ The bot runs 24/7 with a background heartbeat that monitors price alerts every 2
 ## Architecture
 
 ```
-Telegram User
-     │
-     ▼
+     Telegram User
+         │
+         ▼
 ┌─────────────────────┐
 │  Node.js Bot        │  bot.js — Telegram polling, SQLite alerts & portfolio
 │  (OpenClaw Channel) │
@@ -35,14 +34,18 @@ Telegram User
          │ HTTP (axios)
          ▼
 ┌─────────────────────┐
-│  Python FastAPI     │  api/ — yfinance data, technical indicators
+│  Python FastAPI     │  api/ — Alpha Vantage, yfinance data, technical indicators
 │  localhost:8000     │
 └────────┬────────────┘
-         │ Anthropic SDK
+         │
          ▼
 ┌─────────────────────┐
 │  Claude Haiku       │  AI-powered plain-English explanations
 │  (claude-haiku-4-5) │
+|                     |
+|   Local Ollma       |
+|                     |
+|   Rule Based        |
 └─────────────────────┘
 ```
 
@@ -92,8 +95,9 @@ cd ..
 Create `backend/.env`:
 
 ```env
-TOKEN=your_telegram_bot_token_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here   # optional
+TOKEN=your_telegram_bot_api_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key_here
 ```
 
 ---
@@ -128,7 +132,6 @@ Open Telegram, find your bot, and send `/start`.
 ```
 /analyze RELIANCE
 /analyze TCS.NS
-/ipo
 /alert INFY 1800
 /alerts
 /cancelalert 1
@@ -142,27 +145,29 @@ Open Telegram, find your bot, and send `/start`.
 ## Project Structure
 
 ```
-Samsung-PRISM-Hackathon/
-├── SOUL.md              # OpenClaw: agent personality & boundaries
-├── HEARTBEAT.md         # OpenClaw: background daemon tasks
-├── Skill.md             # OpenClaw: skill definitions
-├── requirements.txt     # Python dependencies
-├── api/
-│   ├── main.py          # FastAPI app (routes)
-│   ├── analysis.py      # yfinance + MA/RSI computation
-│   └── explain.py       # Claude AI explanation
-└── backend/
-    ├── bot.js           # Telegram bot (all commands + cron)
-    └── package.json     # Node.js dependencies
+    Samsung-PRISM-Hackathon/
+    .
+    ├── api
+    │   ├── analysis.py
+    │   ├── explain.py
+    │   ├── __init__.py
+    │   └── main.py
+    ├── backend
+    │   ├── bot.js
+    │   ├── package.json
+    │   └── package-lock.json
+    ├── HEARTBEAT.md
+    ├── LICENSE
+    ├── package-lock.json
+    ├── python_service
+    │   ├── app.py
+    │   ├── data_fetch.py
+    │   ├── indicators.py
+    │   └── requirements.txt
+    ├── README.md
+    ├── requirements.txt
+    ├── Skill.md
+    └── SOUL.md
+
+    4 directories, 18 files
 ```
-
----
-
-## How to Apply to Win
-
-**Final evaluation criteria:**
-- Working Prototype / Functionality — 35%
-- Technical Depth — 25%
-- UX/Novelty — 15%
-- Relevance to Theme — 15%
-- Presentation & Documentation — 10%
