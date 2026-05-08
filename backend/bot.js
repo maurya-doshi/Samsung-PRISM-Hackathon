@@ -99,9 +99,11 @@ bot.onText(/\/start/, (msg) => {
     `Available commands:\n` +
     `• /analyze <ticker> – Full stock analysis with AI insight\n` +
     `• /ipo – Recent & upcoming IPO listings\n` +
-    `• /alert <ticker> <price> – Set a price alert\n` +
+    `• /sellalert <ticker> <price> – Set a sell price alert\n` +
+    `• /buyalert <ticker> <price> – Set a buy price alert\n` +
     `• /alerts – List your active alerts\n` +
     `• /cancelalert <id> – Remove an alert\n` +
+    `• /updatealert <id> <price> – Update an alert's target price\n` +
     `• /buy <ticker> <qty> <price> – Add stock to portfolio\n` +
     `• /sell <ticker> [qty] – Sell from portfolio\n` +
     `• /portfolio – View your portfolio\n` +
@@ -120,9 +122,11 @@ bot.onText(/\/help/, (msg) => {
     `🚀 *IPO Tracker*\n` +
     `/ipo – Recent IPO listings with live prices\n\n` +
     `🔔 *Alerts*\n` +
-    `/alert TCS 3500 – Alert when TCS hits ₹3500\n` +
+    `/sellalert TCS 3500 – Alert when TCS goes above ₹3500\n` +
+    `/buyalert TCS 3000 – Alert when TCS dips below ₹3000\n` +
     `/alerts – View all your active alerts\n` +
-    `/cancelalert 3 – Cancel alert #3\n\n` +
+    `/cancelalert 3 – Cancel alert #3\n` +
+    `/updatealert 3 3600 – Update alert #3 to ₹3600\n\n` +
     `💼 *Portfolio*\n` +
     `/buy TCS 10 3500 – Buy 10 shares of TCS at ₹3500\n` +
     `/sell TCS 5 – Sell 5 shares of TCS\n` +
@@ -249,20 +253,20 @@ bot.onText(/\/ipo$/, async (msg) => {
   }
 });
 
-// /alert <ticker> <price>
-bot.onText(/\/alert(?:\s+(.*))?/i, async (msg, match) => {
+// /sellalert <ticker> <price>
+bot.onText(/\/sellalert(?:\s+(.*))?/i, async (msg, match) => {
   const chatId = msg.chat.id;
   const args = match[1]?.trim().split(/\s+/);
 
   if (!args || args.length < 2) {
-    return bot.sendMessage(chatId, '❓ Usage: `/alert TCS 3500`', { parse_mode: 'Markdown' });
+    return bot.sendMessage(chatId, '❓ Usage: `/sellalert TCS 3500`', { parse_mode: 'Markdown' });
   }
 
   const ticker = args[0].toUpperCase();
   const target = parseFloat(args[1]);
 
   if (isNaN(target) || target <= 0) {
-    return bot.sendMessage(chatId, '❌ Invalid price. Usage: `/alert TCS 3500`', { parse_mode: 'Markdown' });
+    return bot.sendMessage(chatId, '❌ Invalid price. Usage: `/sellalert TCS 3500`', { parse_mode: 'Markdown' });
   }
 
   const waiting = await bot.sendMessage(chatId, `⏳ Verifying *${ticker}*…`, { parse_mode: 'Markdown' });
@@ -279,14 +283,56 @@ bot.onText(/\/alert(?:\s+(.*))?/i, async (msg, match) => {
     });
   }
 
-  // Direction is resolved on first cron check based on current vs target price
   db.run(
-    `INSERT INTO alerts (chat_id, ticker, target, direction) VALUES (?, ?, ?, 'any')`,
+    `INSERT INTO alerts (chat_id, ticker, target, direction) VALUES (?, ?, ?, 'above')`,
     [chatId, ticker, target],
     function (err) {
       if (err) return bot.editMessageText('❌ Failed to save alert.', { chat_id: chatId, message_id: waiting.message_id });
       bot.editMessageText(
-        `✅ Alert set!\n📌 *${ticker}* @ ₹${target}\nID: \`${this.lastID}\`\n\nYou'll be notified when the price crosses this level.`,
+        `✅ Sell Alert set!\n📌 *${ticker}* @ ₹${target}\nID: \`${this.lastID}\`\n\nYou'll be notified when the price goes above this level.`,
+        { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
+      );
+    }
+  );
+});
+
+// /buyalert <ticker> <price>
+bot.onText(/\/buyalert(?:\s+(.*))?/i, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const args = match[1]?.trim().split(/\s+/);
+
+  if (!args || args.length < 2) {
+    return bot.sendMessage(chatId, '❓ Usage: `/buyalert TCS 3000`', { parse_mode: 'Markdown' });
+  }
+
+  const ticker = args[0].toUpperCase();
+  const target = parseFloat(args[1]);
+
+  if (isNaN(target) || target <= 0) {
+    return bot.sendMessage(chatId, '❌ Invalid price. Usage: `/buyalert TCS 3000`', { parse_mode: 'Markdown' });
+  }
+
+  const waiting = await bot.sendMessage(chatId, `⏳ Verifying *${ticker}*…`, { parse_mode: 'Markdown' });
+
+  // Validate ticker before saving
+  try {
+    await fetchAnalysis(ticker);
+  } catch (err) {
+    const detail = err.response?.data?.detail ?? 'Stock not found.';
+    return bot.editMessageText(`❌ *${ticker}*: ${detail}`, {
+      chat_id: chatId,
+      message_id: waiting.message_id,
+      parse_mode: 'Markdown',
+    });
+  }
+
+  db.run(
+    `INSERT INTO alerts (chat_id, ticker, target, direction) VALUES (?, ?, ?, 'below')`,
+    [chatId, ticker, target],
+    function (err) {
+      if (err) return bot.editMessageText('❌ Failed to save alert.', { chat_id: chatId, message_id: waiting.message_id });
+      bot.editMessageText(
+        `✅ Buy Alert set!\n📌 *${ticker}* @ ₹${target}\nID: \`${this.lastID}\`\n\nYou'll be notified when the price dips below this level.`,
         { chat_id: chatId, message_id: waiting.message_id, parse_mode: 'Markdown' }
       );
     }
@@ -307,7 +353,7 @@ bot.onText(/\/alerts$/, (msg) => {
         return bot.sendMessage(chatId, '❌ Could not retrieve alerts. Please try again.');
       }
       if (!rows.length) {
-        return bot.sendMessage(chatId, 'ℹ️ You have no active alerts.\n\nUse /alert <ticker> <price> to set one.');
+        return bot.sendMessage(chatId, 'ℹ️ You have no active alerts.\n\nUse /sellalert or /buyalert <ticker> <price> to set one.');
       }
       const lines = rows.map(
         (r) => `• #${r.id}  *${r.ticker}*  @ ₹${r.target}`
@@ -332,6 +378,35 @@ bot.onText(/\/cancelalert\s+(\d+)/i, (msg, match) => {
         return bot.sendMessage(chatId, `❌ Alert #${id} not found.`);
       }
       bot.sendMessage(chatId, `🗑️ Alert #${id} cancelled.`);
+    }
+  );
+});
+
+// /updatealert <id> <new_price>
+bot.onText(/\/updatealert(?:\s+(.*))?/i, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const args = match[1]?.trim().split(/\s+/);
+
+  if (!args || args.length < 2) {
+    return bot.sendMessage(chatId, '❓ Usage: `/updatealert <id> <new_price>` (e.g., `/updatealert 3 3600`)', { parse_mode: 'Markdown' });
+  }
+
+  const id = parseInt(args[0]);
+  const newTarget = parseFloat(args[1]);
+
+  if (isNaN(id) || isNaN(newTarget) || newTarget <= 0) {
+    return bot.sendMessage(chatId, '❌ Invalid ID or price. Usage: `/updatealert 3 3600`', { parse_mode: 'Markdown' });
+  }
+
+  // Update in DB
+  db.run(
+    `UPDATE alerts SET target = ? WHERE id = ? AND chat_id = ?`,
+    [newTarget, id, chatId],
+    function (err) {
+      if (err || this.changes === 0) {
+        return bot.sendMessage(chatId, `❌ Alert #${id} not found or could not be updated.`);
+      }
+      bot.sendMessage(chatId, `✅ Alert #${id} updated to new target: ₹${newTarget}`);
     }
   );
 });
@@ -380,8 +455,6 @@ cron.schedule('*/2 * * * *', async () => {
             `🎯 Your target: ₹${alert.target}`,
             { parse_mode: 'Markdown' }
           );
-
-          db.run(`UPDATE alerts SET triggered = 1 WHERE id = ?`, [alert.id]);
         }
       }
     }
@@ -391,7 +464,7 @@ cron.schedule('*/2 * * * *', async () => {
 // ── Portfolio Commands ────────────────────────────────────────────────────────
 
 // /buy <ticker> <quantity> <price>
-bot.onText(/\/buy(?:\s+(.*))?/i, async (msg, match) => {
+bot.onText(/^\/buy(?:@\S+)?(?:\s+(.*))?$/i, async (msg, match) => {
   const chatId = msg.chat.id;
   const args = match[1]?.trim().split(/\s+/);
 
@@ -545,7 +618,7 @@ bot.onText(/\/portfolio$/, (msg) => {
 const KNOWN_COMMANDS = [
   '/start', '/help',
   '/analyze', '/ipo',
-  '/alert', '/alerts', '/cancelalert',
+  '/sellalert', '/buyalert', '/alerts', '/cancelalert', '/updatealert',
   '/buy', '/sell', '/portfolio',
   '/status', '/info',
 ];
