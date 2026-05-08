@@ -95,10 +95,9 @@ function formatAnalysis(data, explanation) {
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    `👋 *IPO Pulse Bot* is live!\n\n` +
+    `👋 *Stock Pulse Bot* is live!\n\n` +
     `Available commands:\n` +
     `• /analyze <ticker> – Full stock analysis with AI insight\n` +
-    `• /ipo – Recent & upcoming IPO listings\n` +
     `• /sellalert <ticker> <price> – Set a sell price alert\n` +
     `• /buyalert <ticker> <price> – Set a buy price alert\n` +
     `• /alerts – List your active alerts\n` +
@@ -116,11 +115,9 @@ bot.onText(/\/start/, (msg) => {
 bot.onText(/\/help/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    `*IPO Pulse — Commands*\n\n` +
+    `*Stock Pulse — Commands*\n\n` +
     `📊 *Analysis*\n` +
     `/analyze RELIANCE – Full technical analysis + AI insight\n\n` +
-    `🚀 *IPO Tracker*\n` +
-    `/ipo – Recent IPO listings with live prices\n\n` +
     `🔔 *Alerts*\n` +
     `/sellalert TCS 3500 – Alert when TCS goes above ₹3500\n` +
     `/buyalert TCS 3000 – Alert when TCS dips below ₹3000\n` +

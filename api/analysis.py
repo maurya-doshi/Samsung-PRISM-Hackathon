@@ -212,9 +212,9 @@ RECENT_IPOS = [
     {"ticker": "SWIGGY.NS",    "name": "Swiggy",                     "ipo_date": "2024-11-13"},
     {"ticker": "SAGILITY.NS",  "name": "Sagility India",             "ipo_date": "2024-11-12"},
     {"ticker": "NTPCGREEN.NS", "name": "NTPC Green Energy",          "ipo_date": "2024-11-27"},
-    {"ticker": "ACME.NS",      "name": "ACME Solar Holdings",        "ipo_date": "2024-11-13"},
+    {"ticker": "ACMESOLAR.NS",      "name": "ACME Solar Holdings",        "ipo_date": "2024-11-13"},
     {"ticker": "MOBIKWIK.NS",  "name": "One Mobikwik Systems",       "ipo_date": "2024-12-18"},
-    {"ticker": "IDENTICAL.NS", "name": "Identical Brain Studios",    "ipo_date": "2025-01-01"},
+    {"ticker": "IDENTICAL-SM.NS", "name": "Identical Brain Studios",    "ipo_date": "2025-01-01"},
     {"ticker": "HEXAWARE.NS",  "name": "Hexaware Technologies",      "ipo_date": "2025-02-12"},
     {"ticker": "DELHIVERY.NS", "name": "Delhivery",                  "ipo_date": "2022-05-24"},
 ]
